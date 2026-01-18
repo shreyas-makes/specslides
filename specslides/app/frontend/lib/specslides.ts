@@ -12,7 +12,30 @@ interface ParsedStory {
   slides: Specslide[]
 }
 
+export interface PromptThread {
+  id: string
+  prompt: string
+  timestamp: string | null
+  toolUses: ToolUse[]
+}
+
+export interface ToolUse {
+  name: string
+  type: string | null
+  content: string
+}
+
+interface ParsedThreads {
+  title: string
+  threads: PromptThread[]
+}
+
 const ROLE_HEADER = /^_\*\*(User|Agent)(.*?)\*\*_$/
+const TOOL_USE_OPEN = /<tool-use\b([^>]*)>/i
+const TOOL_USE_CLOSE = /<\/tool-use>/i
+const TOOL_WRAPPER_TAG = /^<\/?(details|summary)>/i
+const TOOL_NAME_ATTR = /data-tool-name="([^"]+)"/i
+const TOOL_TYPE_ATTR = /data-tool-type="([^"]+)"/i
 
 export function parseSpecstoryMarkdown(markdown: string): ParsedStory {
   const title = extractTitle(markdown)
@@ -60,6 +83,119 @@ export function parseSpecstoryMarkdown(markdown: string): ParsedStory {
   }
 
   return { title, slides }
+}
+
+export function parseSpecstoryThreads(markdown: string): ParsedThreads {
+  const title = extractTitle(markdown)
+  const lines = markdown.split("\n")
+  const threads: PromptThread[] = []
+
+  let currentRole: SlideRole | null = null
+  let currentThread: PromptThread | null = null
+  let promptBuffer: string[] = []
+  let toolBuffer: string[] = []
+  let toolName: string | null = null
+  let toolType: string | null = null
+  let capturingTool = false
+
+  const finalizePrompt = () => {
+    if (!currentThread) return
+    const text = promptBuffer.join("\n").trim()
+    if (text.length > 0) {
+      currentThread.prompt = text
+    }
+    promptBuffer = []
+  }
+
+  const finalizeTool = () => {
+    if (!currentThread || !toolName) {
+      toolBuffer = []
+      toolName = null
+      toolType = null
+      capturingTool = false
+      return
+    }
+
+    const content = toolBuffer.join("\n").trim()
+    if (content.length > 0) {
+      currentThread.toolUses.push({
+        name: toolName,
+        type: toolType,
+        content,
+      })
+    }
+
+    toolBuffer = []
+    toolName = null
+    toolType = null
+    capturingTool = false
+  }
+
+  for (const line of lines) {
+    const headerMatch = line.match(ROLE_HEADER)
+    if (headerMatch) {
+      if (currentRole === "User") {
+        finalizePrompt()
+      }
+
+      const role = headerMatch[1] as SlideRole
+      currentRole = role
+
+      if (role === "User") {
+        const meta = headerMatch[2]?.trim() || ""
+        const timestampMatch = meta.match(/\(([^)]+)\)/)
+        const timestamp = timestampMatch ? timestampMatch[1] : null
+        const nextThread: PromptThread = {
+          id: `${threads.length + 1}`,
+          prompt: "",
+          timestamp,
+          toolUses: [],
+        }
+        threads.push(nextThread)
+        currentThread = nextThread
+      }
+      continue
+    }
+
+    if (capturingTool) {
+      if (TOOL_USE_CLOSE.test(line)) {
+        finalizeTool()
+      } else if (!TOOL_WRAPPER_TAG.test(line.trim())) {
+        toolBuffer.push(line)
+      } else {
+        // Skip wrapper tags to keep the content readable.
+      }
+      continue
+    }
+
+    const toolMatch = line.match(TOOL_USE_OPEN)
+    if (toolMatch) {
+      const attrs = toolMatch[1] ?? ""
+      const nameMatch = attrs.match(TOOL_NAME_ATTR)
+      const typeMatch = attrs.match(TOOL_TYPE_ATTR)
+      toolName = nameMatch ? nameMatch[1] : "tool"
+      toolType = typeMatch ? typeMatch[1] : null
+      capturingTool = true
+      toolBuffer = []
+      continue
+    }
+
+    if (currentRole === "User" && currentThread) {
+      if (line.trim() === "---") {
+        continue
+      }
+      promptBuffer.push(line)
+    }
+  }
+
+  if (currentRole === "User") {
+    finalizePrompt()
+  }
+  if (capturingTool) {
+    finalizeTool()
+  }
+
+  return { title, threads: threads.filter((thread) => thread.prompt.length > 0) }
 }
 
 export function extractTitle(markdown: string): string {

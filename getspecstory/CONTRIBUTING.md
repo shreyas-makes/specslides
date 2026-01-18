@@ -1,1 +1,0 @@
-./specstory-cli/CONTRIBUTING.md
