@@ -1,0 +1,12 @@
+{
+  "name": "chatsnip",
+  "version": "0.1.0",
+  "description": "CLI-first local chat session capture for Codex CLI",
+  "bin": {
+    "chatsnip": "bin/chatsnip.js"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
