@@ -38,10 +38,9 @@ chatsnip run codex
 ```
 
 **Behavior**
-- Launches Codex CLI as a child process.
-- Captures stdin/stdout and metadata.
-- Writes a Markdown session file to `.chatsnips/history/`.
-- Writes an optional `.chatsnips/latest.md` symlink or copy for quick access.
+- Launches Codex CLI as a child process (interactive TUI by default).
+- Captures the session and writes a human-friendly Markdown file to `.chatsnips/history/`.
+- Cleans UI chrome and terminal artifacts from the transcript.
 
 **Expected Output**
 - Normal Codex CLI output should remain intact.
@@ -89,9 +88,8 @@ tags: []
 ```
 
 **Body (Markdown)**
-- Interleaved user/assistant turns.
-- Preserve code blocks and formatting.
-- Avoid proprietary metadata unless explicitly requested.
+- Human-friendly transcript of the session.
+- No tool-call metadata (by design).
 
 ---
 
@@ -110,6 +108,8 @@ tags: []
 - `--output <path>`: override default output directory
 - `--slug <text>`: override filename slug
 - `--resume <session_id>`: resume a previous session if Codex supports it
+- `--exec`: run non-interactive `codex exec --json` and save structured output (optional)
+- `--tui`: force interactive TUI capture (default)
 
 ---
 
@@ -142,13 +142,21 @@ Here’s what’s happening…
 4. Writer (file generation + slug)
 5. Config Loader (optional `~/.config/chatsnip/config.json`)
 
-**Process Flow**
+**Process Flow (TUI)**
 1. Parse CLI args.
 2. Resolve project root (git root if available, else CWD).
 3. Ensure `.chatsnips/history` exists.
-4. Spawn Codex CLI process.
-5. Record all I/O streams.
+4. Spawn Codex CLI TUI and capture a transcript.
+5. Clean transcript to remove UI chrome.
 6. Persist Markdown on clean exit or SIGINT.
+
+**Process Flow (Exec / JSON)**
+1. Parse CLI args.
+2. Resolve project root (git root if available, else CWD).
+3. Ensure `.chatsnips/history` exists.
+4. Run `codex exec --json` with a single prompt.
+5. Parse JSON events into user/assistant turns.
+6. Persist Markdown on clean exit.
 
 ---
 
@@ -177,7 +185,8 @@ Here’s what’s happening…
 **Testing Strategy**
 1. Unit tests for slug generation and file naming.
 2. Unit tests for session schema generation.
-3. Integration test for “run codex” with a fake child process.
+3. Integration test for `run codex` with a fake child process.
+4. Optional integration test for `--exec` JSON parsing.
 
 ---
 
